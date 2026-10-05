@@ -1,0 +1,16 @@
+[Unit]
+Description=Gitea managed by rootless Podman Compose
+Wants=podman.socket
+After=podman.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@PROJECT@
+ExecStart=@PROJECT@/scripts/start.sh
+ExecStop=@PROJECT@/scripts/stop.sh
+TimeoutStartSec=15min
+TimeoutStopSec=3min
+
+[Install]
+WantedBy=default.target

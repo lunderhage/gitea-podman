@@ -1,0 +1,11 @@
+[Unit]
+Description=Encrypted Gitea backup
+Wants=podman.socket
+After=podman.socket
+
+[Service]
+Type=oneshot
+WorkingDirectory=@PROJECT@
+ExecStart=@PROJECT@/scripts/backup.sh
+TimeoutStartSec=infinity
+UMask=0077

@@ -1,0 +1,21 @@
+services:
+  server:
+    image: ${GITEA_IMAGE:?Set GITEA_IMAGE to a pinned rootless release}
+    restart: always
+    stop_grace_period: 120s
+    volumes:
+      - gitea-data:/var/lib/gitea
+      - gitea-config:/etc/gitea
+    ports:
+      - "${HTTP_PORT:-3000}:3000"
+      - "${SSH_PORT:-2222}:2222"
+    environment:
+      GITEA__indexer__REPO_INDEXER_ENABLED: "true"
+      GITEA__indexer__REPO_INDEXER_TYPE: "bleve"
+volumes:
+  gitea-data:
+    external: true
+    name: ${DATA_VOLUME:?Set DATA_VOLUME}
+  gitea-config:
+    external: true
+    name: ${CONFIG_VOLUME:?Set CONFIG_VOLUME}

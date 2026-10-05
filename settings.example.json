@@ -1,0 +1,11 @@
+{
+  "image": "docker.gitea.com/gitea:28.0.0-rootless",
+  "dataVolume": "gitea-data",
+  "configVolume": "gitea-config",
+  "project": "gitea-podman",
+  "httpPort": 3000,
+  "sshPort": 2222,
+  "remote": "gitea-crypt:server",
+  "keep": 14,
+  "readySeconds": 900
+}

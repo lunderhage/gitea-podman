@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly encrypted Gitea backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+Unit=gitea-podman-backup.service
+
+[Install]
+WantedBy=timers.target
