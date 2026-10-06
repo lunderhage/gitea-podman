@@ -248,6 +248,9 @@ clone/push, attachments, and search after every upgrade or rollback.
 
 ## Operational failures and testing
 
+To test container stop/start from a sidecar on primary2 without operating on
+Gitea, follow [the separate lifecycle experiment](docs/container-lifecycle-test.md).
+
 All commands share state/operation.lock. A timer encountering a busy operation
 fails safely and will retry at its next scheduled run. Partial cloud uploads have
 no completion marker and are not restored. Before manually deleting local state,

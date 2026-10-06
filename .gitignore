@@ -4,3 +4,4 @@ state/
 *.log
 __pycache__/
 *.py[cod]
+test-results/
