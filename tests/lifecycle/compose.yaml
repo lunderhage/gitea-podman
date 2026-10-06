@@ -1,7 +1,7 @@
 # A disposable experiment, separate from the production Gitea Compose file.
 services:
   controller:
-    image: ${LIFECYCLE_MANAGER_IMAGE:-localhost/gitea-podman-manager:2}
+    image: ${LIFECYCLE_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
     container_name: gitea-lifecycle-test-controller
     restart: "no"
     labels:

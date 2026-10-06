@@ -7,5 +7,7 @@
   "sshPort": 2222,
   "remote": "gitea-crypt:server",
   "keep": 14,
+  "backupEnabled": true,
+  "backupHourUTC": 3,
   "readySeconds": 900
 }

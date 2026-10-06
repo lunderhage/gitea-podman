@@ -9,5 +9,6 @@ for unit in gitea-podman.service gitea-podman-backup.service gitea-podman-backup
   sed "s|@PROJECT@|$ROOT|g" "$ROOT/systemd/$unit" > "$DEST/$unit"
 done
 systemctl --user daemon-reload
-systemctl --user enable --now podman.socket gitea-podman.service gitea-podman-backup.timer
+systemctl --user disable --now gitea-podman-backup.timer
+systemctl --user enable --now podman.socket gitea-podman.service
 printf '%s\n' 'Enable lingering for this account with loginctl enable-linger, if your system permits it.'

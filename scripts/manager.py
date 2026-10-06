@@ -25,6 +25,7 @@ from urllib.request import urlopen
 IMAGE_DIGEST = r"docker\.gitea\.com/gitea@sha256:[a-f0-9]{64}"
 SNAPSHOT_ID = r"\d{8}T\d{6}Z-[a-f0-9]{8}"
 SNAPSHOT_FILES = ("data.tar", "config.tar", "compose.yaml", "recovery.md")
+DUMP_SNAPSHOT_FILES = ("gitea-dump.zip", "config.tar", "compose.yaml", "recovery.md")
 UPGRADE_GUIDE = "https://docs.gitea.com/installation/upgrade-from-gitea/"
 
 
@@ -39,14 +40,15 @@ def validate_manifest(manifest):
     if not isinstance(manifest, dict):
         raise ValueError("Invalid snapshot manifest")
     patterns = {"id": SNAPSHOT_ID, "image": IMAGE_DIGEST, "owner": r"[0-9]+:[0-9]+"}
-    valid = manifest.get("schema") == 1
+    valid = manifest.get("schema") in (1, 2)
     for key, pattern in patterns.items():
         value = manifest.get(key)
         valid = valid and isinstance(value, str) and re.fullmatch(pattern, value) is not None
     hashes = manifest.get("hashes")
     valid = valid and isinstance(hashes, dict)
     if valid:
-        valid = set(hashes) == set(SNAPSHOT_FILES) and all(
+        expected_files = DUMP_SNAPSHOT_FILES if manifest["schema"] == 2 else SNAPSHOT_FILES
+        valid = set(hashes) == set(expected_files) and all(
             isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value)
             for value in hashes.values()
         )
@@ -179,7 +181,18 @@ class Manager:
     def env(self):
         return dict(os.environ, GITEA_IMAGE=self.c["image"],
                     DATA_VOLUME=self.c["dataVolume"], CONFIG_VOLUME=self.c["configVolume"],
-                    HTTP_PORT=str(self.c["httpPort"]), SSH_PORT=str(self.c["sshPort"]))
+                    HTTP_PORT=str(self.c["httpPort"]), SSH_PORT=str(self.c["sshPort"]),
+                    GITEA_PROJECT_DIR=str(self.root),
+                    GITEA_PODMAN_SOCKET=os.environ.get("GITEA_PODMAN_SOCKET", ""),
+                    GITEA_MANAGER_IMAGE=self.helper(),
+                    BACKUP_VOLUME=self.c.get("backupVolume", self.c["project"] + "-backups"))
+
+    def backup_container(self):
+        ids = self.pod("ps", "--filter", f'label=com.docker.compose.project={self.c["project"]}',
+                       "--filter", "label=com.docker.compose.service=backup", "--format", "{{.ID}}").split()
+        if len(ids) > 1:
+            raise ValueError("More than one backup sidecar exists for this project")
+        return ids[0] if ids else None
 
     def compose_run(self, *arguments):
         return self.command("podman-compose", ["-p", self.c["project"], "-f",
@@ -317,7 +330,7 @@ class Manager:
 
     @staticmethod
     def helper():
-        return os.environ.get("GITEA_MANAGER_IMAGE", "localhost/gitea-podman-manager:2")
+        return os.environ.get("GITEA_MANAGER_IMAGE", "localhost/gitea-podman-manager:3")
 
     def capture(self, info, kind):
         snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(4)
@@ -327,7 +340,7 @@ class Manager:
         # rootless container preserves container UID/GID values instead.
         for filename, volume in (("data.tar", self.c["dataVolume"]),
                                  ("config.tar", self.c["configVolume"])):
-            self.pod("run", "--rm", "--security-opt", "label=disable", "--user", "0",
+            self.pod("run", "--rm", "--network", "none", "--security-opt", "label=disable", "--user", "0",
                      "--entrypoint", "tar", "-v", f"{volume}:/source:ro", "-v",
                      f"{directory}:/staging", self.helper(), "-C", "/source",
                      "--numeric-owner", "-cpf", f"/staging/{filename}", ".")
@@ -397,7 +410,7 @@ class Manager:
     def space(self):
         size = 0
         for volume in (self.c["dataVolume"], self.c["configVolume"]):
-            output = self.pod("run", "--rm", "--entrypoint", "du", "-v",
+            output = self.pod("run", "--rm", "--network", "none", "--entrypoint", "du", "-v",
                               f"{volume}:/source:ro", self.helper(), "-sk", "/source")
             size += int(output.split()[0]) * 1024
         if shutil.disk_usage(self.state).free < size * 2 + 256 * 1024 * 1024:
@@ -432,25 +445,24 @@ class Manager:
         if servers and not rollback:
             raise ValueError("Restore requires an unused Compose project; select a new project and free ports")
         if rollback:
-            self.compose_run("down")
+            self.compose_run("stop", "server")
         suffix = secrets.token_hex(4)
         data = f'{self.c["project"]}-restore-data-{suffix}'
         config = f'{self.c["project"]}-restore-config-{suffix}'
-        for volume, filename in ((data, "data.tar"), (config, "config.tar")):
+        for volume in (data, config):
             existing = self.pod("volume", "ls", "--format", "{{.Name}}").splitlines()
             if volume in existing:
                 raise ValueError("Recovery volume already exists")
             self.pod("volume", "create", volume)
-            self.pod("run", "--rm", "--security-opt", "label=disable", "--user", "0",
-                     "--entrypoint", "tar", "-v", f"{volume}:/restore", "-v",
-                     f"{directory}:/staging:ro", self.helper(), "-C", "/restore",
-                     "--numeric-owner", "-xpf", f"/staging/{filename}")
-            self.pod("run", "--rm", "--user", "0", "--entrypoint", "chown", "-v",
+        self.restore_payload(manifest, directory, data, config)
+        for volume in (data, config):
+            self.pod("run", "--rm", "--network", "none", "--user", "0", "--entrypoint", "chown", "-v",
                      f"{volume}:/restore", self.helper(), "-R", manifest["owner"], "/restore")
         previous = dict(self.c)
         self.c.update(image=image, dataVolume=data, configVolume=config)
         shutil.copyfile(self.compose, self.state / "before-restore-compose.yaml")
-        shutil.copyfile(directory / "compose.yaml", self.compose)
+        # Retain the destination Compose topology (including its sidecar).
+        # The original Compose file remains available in the snapshot metadata.
         self.write(self.state / "before-restore.json", previous)
         self.write(self.config, self.c)
         self.compose_run("up", "-d")
@@ -458,6 +470,19 @@ class Manager:
             raise ValueError("Restored server not ready; inspect logs. Original volumes are preserved.")
         shutil.rmtree(directory)
         print(f'Restored {manifest["id"]}. Check login, SSH clone/push, and search.')
+
+    def restore_payload(self, manifest, directory, data, config):
+        archives = ((config, "config.tar"),) if manifest["schema"] == 2 else ((data, "data.tar"), (config, "config.tar"))
+        for volume, filename in archives:
+            self.pod("run", "--rm", "--network", "none", "--security-opt", "label=disable", "--user", "0",
+                     "--entrypoint", "tar", "-v", f"{volume}:/restore", "-v",
+                     f"{directory}:/staging:ro", self.helper(), "-C", "/restore",
+                     "--numeric-owner", "-xpf", f"/staging/{filename}")
+        if manifest["schema"] == 2:
+            self.pod("run", "--rm", "--network", "none", "--security-opt", "label=disable",
+                     "--user", "0", "--entrypoint", "python3", "-v", f"{data}:/var/lib/gitea",
+                     "-v", f"{config}:/etc/gitea:ro", "-v", f"{directory}:/staging:ro",
+                     self.helper(), "/opt/gitea/dump_restore.py", "/staging/gitea-dump.zip")
 
     def ready(self, version):
         deadline = time.monotonic() + self.c["readySeconds"]
@@ -503,7 +528,7 @@ class Manager:
         self.write(self.config, self.c)
         # Remove the old-image restart marker BEFORE migration can start.
         (self.state / "restart-container").unlink(missing_ok=True)
-        self.compose_run("up", "-d", "--force-recreate")
+        self.compose_run("up", "-d", "--force-recreate", "server")
         if not self.ready(version):
             print("Readiness observation timed out. Migrations may still be running. No automatic "
                   "rollback or interruption. Inspect podman logs, then explicitly use rollback.sh "
@@ -524,7 +549,7 @@ class Manager:
         self.write(self.config, self.c)
         for volume in (self.c["dataVolume"], self.c["configVolume"]):
             self.pod("volume", "create", volume)
-            self.pod("run", "--rm", "--user", "0", "--entrypoint", "chown", "-v",
+            self.pod("run", "--rm", "--network", "none", "--user", "0", "--entrypoint", "chown", "-v",
                      f"{volume}:/init", self.helper(), "1000:1000", "/init")
         self.compose_run("up", "-d")
 
@@ -574,7 +599,12 @@ def main(argv=None):
         manager.settings()
         manager.compose_run(*(("up", "-d") if args.action == "start" else ("stop",)))
     elif args.action == "backup":
-        print(manager.backup())
+        manager.settings()
+        sidecar = manager.backup_container()
+        if not sidecar:
+            raise ValueError("Start the Compose backup service before taking a backup")
+        print(manager.pod("exec", sidecar, "python3", "/opt/gitea/backup_service.py",
+                          "--once", "--lock-held"), end="")
     elif args.action == "list-backups":
         print("\n".join(manager.list_backups()))
     elif args.action == "restore":

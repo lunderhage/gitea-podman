@@ -1,6 +1,6 @@
 # Gitea with rootless Podman
 
-Rootless Podman Compose, SQLite, nightly full backups encrypted with rclone crypt,
+Rootless Podman Compose, SQLite, a network-preserving backup sidecar, encrypted rclone dumps,
 and deliberate upgrades following the official Gitea upgrade procedure.
 The host needs a systemd Linux installation, rootless Podman configured for
 its regular user, Bash and flock. Run all project commands as that user, without
@@ -61,7 +61,7 @@ manager image is built on first use. After changing its code or Containerfile,
 rebuild it explicitly:
 
 ```sh
-podman build -t localhost/gitea-podman-manager:2 -f Containerfile .
+podman build -t localhost/gitea-podman-manager:3 -f Containerfile .
 ```
 
 The manager uses the rootless Podman socket to manage containers. It mounts the
@@ -92,7 +92,10 @@ from your old deployment into this project's compose.yaml before recreating it;
 keep the data/config volume mappings and required image variables intact.
 
 Use this project for future Compose operations. Disable the previous startup job
-so two deployments do not compete. Run backup before recreating with start.sh.
+so two deployments do not compete. Adoption only records settings. Taking the
+first backup from an existing deployment before switching its Compose topology
+needs the separate migration procedure; do not recreate primary2's production
+instance merely to add the unverified sidecar.
 Do not run `compose down -v` or delete the original volumes.
 
 ## Configure encrypted cloud storage
@@ -120,23 +123,33 @@ machine. The backup does not include private/rclone.conf.
 
 ## Backups
 
+The main Compose file now includes the backup sidecar. See
+[its setup and dump/restore workflow](docs/backup-sidecar.md) before deploying it.
+
 ```sh
 ./scripts/backup.sh
 ./scripts/list-backups.sh
+./scripts/start.sh
 ./scripts/install-systemd.sh
-systemctl --user list-timers gitea-podman-backup.timer
-journalctl --user -u gitea-podman-backup.service
 ```
 
-The timer runs daily at 03:00 UTC and catches up after downtime. Enable user
+The Compose backup service runs daily at 03:00 UTC and catches up after downtime.
+Set backupEnabled to false to disable scheduling, or backupHourUTC to another
+hour (0–23) in settings.json. Manual backup.sh still works with scheduling disabled.
+The systemd installer disables the old backup timer; the sidecar is the scheduler. Enable user
 lingering (`loginctl enable-linger`) so services run at boot without a login;
 this may require an administrator depending on your system's policy.
 
-Backup checks remote access and staging space, stops Gitea cleanly, captures both
-volumes, and restarts it before upload. This includes SQLite (and any WAL files),
-repositories, SSH keys, configuration, attachments, LFS, packages, and indexes
-stored in those volumes. A full copy is used; there is no SQL conversion or
-incremental repository format. See the official consistency guidance:
+The backup service stays running on Gitea's Compose network. After checking
+remote access and staging space, it stops only the server container and runs
+gitea dump in a one-shot container using the exact server image and user, with
+the same data/config volumes. The dump job uses no network. It writes a ZIP into
+a named backup volume shared with the sidecar, then the server is restarted
+before encrypted upload and verification. A separate config.tar preserves the
+complete configuration volume. Dumps include repositories, database, SSH keys,
+attachments, LFS, packages, and indexes under the standard rootless data layout.
+The new dump format requires APP_DATA_PATH=/var/lib/gitea and repository
+ROOT=/var/lib/gitea/git/repositories; a different layout is rejected before stop. See the official consistency guidance:
 https://docs.gitea.com/administration/backup-and-restore/
 
 Local staging is plaintext with owner-only access. Successful staging is removed;
@@ -150,7 +163,8 @@ Only snapshots with a COMPLETE marker are restore candidates. Keep defaults to
 14 completed ordinary snapshots. The latest upgrade recovery point is protected
 in addition to that quota. Remote directories belonging to this instance are
 pruned only after a successful upload. Do not share this prefix with other apps.
-Failures produce a nonzero exit status and systemd journal output; no notification
+Manual failures produce a nonzero exit status; scheduled failures appear in the
+backup container logs and are retried after a one-hour backoff; no notification
 service is configured. Check those logs regularly.
 
 ## Restore on a new machine
@@ -251,10 +265,11 @@ clone/push, attachments, and search after every upgrade or rollback.
 To test container stop/start from a sidecar on primary2 without operating on
 Gitea, follow [the separate lifecycle experiment](docs/container-lifecycle-test.md).
 
-All commands share state/operation.lock. A timer encountering a busy operation
-fails safely and will retry at its next scheduled run. Partial cloud uploads have
+All commands and the sidecar share state/operation.lock. A scheduled attempt
+encountering a busy operation defers safely. Partial cloud uploads have
 no completion marker and are not restored. Before manually deleting local state,
-inspect state/pending.json and state/rollback.json and preserve needed archives.
+inspect the backup volume's pending.json and state/rollback.json and preserve
+needed archives. Failed ZIP uploads remain in the named backup volume.
 
 A hard power loss or forcibly killed backup process may leave Gitea stopped.
 Once the operation lock is released, use start.sh and inspect the previous backup
@@ -272,9 +287,11 @@ The test script uses an already installed Python 3.12+ when available, otherwise
 it builds and runs the project's management container with rootless Podman. It
 does not install Python or test dependencies on the host. Tests use unittest
 and simulated Podman/rclone commands, including a real archive round trip.
-The Python manager replaces the earlier JavaScript implementation; settings.json
-and snapshot schema 1 remain compatible. Image tag :2 forces a fresh build so
-existing :1 JavaScript manager images are not reused.
+The management image is now tagged :3 and includes the backup sidecar and ZIP
+restore helper. Settings remain compatible. New backups use snapshot schema 2
+(Gitea ZIP plus full config archive); schema 1 volume backups remain readable.
+Restore keeps the destination Compose topology, including the backup service;
+the source Compose file is preserved as recovery metadata.
 
 Live acceptance on a rootless Podman host must also cover a populated backup and
 restore, real Gitea version migration and rollback, interrupted upload, disk-full

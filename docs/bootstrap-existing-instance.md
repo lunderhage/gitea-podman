@@ -1,5 +1,11 @@
 # Back up an existing instance and bootstrap a replacement
 
+This earlier walkthrough describes the first migration. Its source backup step
+must now be tailored separately: backup.sh requires the new running Compose
+sidecar. Do not run start.sh against primary2's production deployment to make
+this walkthrough work. The existing-instance export remains deferred while the
+new sidecar dump/restore format is tested.
+
 Use the existing aarch64 instance as the source of truth. Capture its current
 Gitea version and both volumes; restore that version on the replacement before
 considering an upgrade. These commands assume the source uses **rootless Podman**
@@ -40,7 +46,7 @@ create it with the already built management image, using your configured prefix:
 ```sh
 podman run --rm \
   -v "$PWD/private:/config:ro" \
-  --entrypoint rclone localhost/gitea-podman-manager:2 \
+  --entrypoint rclone localhost/gitea-podman-manager:3 \
   --config /config/rclone.conf mkdir gitea-crypt:original-aarch64
 ```
 

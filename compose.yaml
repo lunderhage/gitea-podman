@@ -12,6 +12,31 @@ services:
     environment:
       GITEA__indexer__REPO_INDEXER_ENABLED: "true"
       GITEA__indexer__REPO_INDEXER_TYPE: "bleve"
+    networks:
+      - gitea
+
+  backup:
+    image: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
+    restart: always
+    depends_on:
+      - server
+    security_opt:
+      - label=disable
+    entrypoint: [python3, /opt/gitea/backup_service.py]
+    volumes:
+      - "${GITEA_PODMAN_SOCKET:?Set the rootless Podman socket}:/run/podman/podman.sock"
+      - "${GITEA_PROJECT_DIR:?Set the local project directory}:${GITEA_PROJECT_DIR}"
+      - gitea-backups:/backup
+    environment:
+      CONTAINER_HOST: unix:///run/podman/podman.sock
+      HOME: /tmp/gitea-manager-home
+      XDG_RUNTIME_DIR: /tmp/gitea-manager-runtime
+      GITEA_ROOT: ${GITEA_PROJECT_DIR}
+      GITEA_MANAGER_IMAGE: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
+      GITEA_BACKUP_PATH: /backup
+      GITEA_BACKUP_VOLUME: ${BACKUP_VOLUME:-gitea-podman-backups}
+    networks:
+      - gitea
 volumes:
   gitea-data:
     external: true
@@ -19,3 +44,8 @@ volumes:
   gitea-config:
     external: true
     name: ${CONFIG_VOLUME:?Set CONFIG_VOLUME}
+  gitea-backups:
+    name: ${BACKUP_VOLUME:-gitea-podman-backups}
+
+networks:
+  gitea: {}

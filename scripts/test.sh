@@ -6,7 +6,7 @@ if command -v python3 >/dev/null && python3 -c 'import sys; sys.exit(sys.version
   exec python3 -B -m unittest discover -s "$ROOT/tests" -v
 fi
 [[ $(id -u) != 0 ]] || { echo 'Run without sudo.' >&2; exit 1; }
-IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:2}
+IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
 if ! podman image exists "$IMAGE"; then
   podman build -t "$IMAGE" -f "$ROOT/Containerfile" "$ROOT"
 fi
