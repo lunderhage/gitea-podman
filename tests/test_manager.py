@@ -124,18 +124,19 @@ class ManagerTests(unittest.TestCase):
         manager = Manager(self.root, command)
         manager.c = settings()
         manager.download = lambda _: (manifest(), self.root)
+        manager.restore_image = lambda snapshot: snapshot["image"]
         with self.assertRaisesRegex(ValueError, "unused Compose project"):
             manager.restore(SNAPSHOT)
         self.assertFalse(any(args[0] == "volume" for args in calls))
 
-    def upgrade_fixture(self, fail_upload=False, ready=True, architecture="arm64"):
+    def upgrade_fixture(self, fail_upload=False, ready=True, architecture="arm64", host="arm64"):
         calls = []
         (self.root / "settings.json").write_text(json.dumps(settings()))
 
         def command(program, arguments, **options):
             calls.append(arguments)
             if arguments[0] == "info":
-                return json.dumps({"host": {"arch": "arm64"}})
+                return json.dumps({"host": {"arch": host}})
             if arguments[0] == "image":
                 return json.dumps([{"Architecture": architecture,
                                     "RepoDigests": ["docker.gitea.com/gitea@sha256:" + "b" * 64]}])
@@ -158,6 +159,7 @@ class ManagerTests(unittest.TestCase):
 
         manager.stop = stop
         manager.capture = lambda *_: manifest()
+        (manager.state / SNAPSHOT).mkdir()
         manager.upload = upload
         manager.compose_run = lambda *args: calls.append(["compose", *args])
         manager.ready = lambda _: ready
@@ -195,6 +197,52 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "architecture"):
             manager.upgrade("28.0.0", True)
         self.assertNotIn(["stopped"], calls)
+
+    def test_x86_upgrade_selects_native_platform(self):
+        manager, calls = self.upgrade_fixture(architecture="amd64", host="amd64")
+        manager.upgrade("28.0.0", True)
+        self.assertIn(["pull", "--platform", "linux/amd64",
+                       "docker.gitea.com/gitea:28.0.0-rootless"], calls)
+
+    def test_arm64_upgrade_selects_native_platform(self):
+        manager, calls = self.upgrade_fixture()
+        manager.upgrade("28.0.0", True)
+        self.assertIn(["pull", "--platform", "linux/arm64",
+                       "docker.gitea.com/gitea:28.0.0-rootless"], calls)
+
+    def restore_image_fixture(self, host, version="28.0.0"):
+        calls = []
+
+        def command(program, arguments):
+            calls.append(arguments)
+            if arguments[0] == "info":
+                return json.dumps({"host": {"arch": host}})
+            if arguments[0] == "image":
+                return json.dumps([{"Architecture": host, "RepoDigests": [IMAGE]}])
+            if arguments[0] == "run":
+                return f"Gitea version {version}\n"
+            return ""
+
+        return Manager(self.root, command), calls
+
+    def test_cross_architecture_restore_selects_same_version_for_destination(self):
+        for source, destination in (("amd64", "arm64"), ("arm64", "amd64")):
+            with self.subTest(source=source, destination=destination):
+                manager, calls = self.restore_image_fixture(destination)
+                self.assertEqual(manager.restore_image(dict(manifest(), architecture=source)), IMAGE)
+                self.assertIn(["pull", "--platform", f"linux/{destination}",
+                               "docker.gitea.com/gitea:28.0.0-rootless"], calls)
+
+    def test_same_architecture_restore_keeps_pinned_digest(self):
+        manager, calls = self.restore_image_fixture("amd64")
+        manager.restore_image(dict(manifest(), architecture="amd64"))
+        self.assertIn(["pull", "--platform", "linux/amd64", IMAGE], calls)
+        self.assertFalse(any("docker.gitea.com/gitea:28.0.0-rootless" in args for args in calls))
+
+    def test_restore_refuses_different_gitea_version(self):
+        manager, _ = self.restore_image_fixture("amd64", version="29.0.0")
+        with self.assertRaisesRegex(ValueError, "Gitea version"):
+            manager.restore_image(dict(manifest(), architecture="arm64"))
 
     def test_cli_help_needs_no_podman_service(self):
         with self.assertRaises(SystemExit) as result:
@@ -279,6 +327,7 @@ class ManagerTests(unittest.TestCase):
         manager.inspect_server = lambda: {"s": {"Id": "old"}, "image": IMAGE,
                                          "version": "28.0.0", "owner": "1000:1000"}
         manager.ready = lambda _: True
+        manager.restore_image = lambda snapshot: snapshot["image"]
         manager.compose_run = lambda *_: None
         snapshot = manager.backup()
         self.assertEqual(manager.list_backups(), [snapshot])

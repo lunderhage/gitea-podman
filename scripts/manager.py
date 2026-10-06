@@ -52,6 +52,9 @@ def validate_manifest(manifest):
         )
     if not valid:
         raise ValueError("Invalid snapshot manifest")
+    if "architecture" in manifest and (not isinstance(manifest["architecture"], str) or
+                                        not re.fullmatch(r"[a-z0-9_]+", manifest["architecture"])):
+        raise ValueError("Invalid snapshot architecture")
     release(manifest.get("version"))
     return manifest
 
@@ -208,6 +211,46 @@ class Manager:
         return next((digest for digest in image.get("RepoDigests", [])
                      if re.fullmatch(IMAGE_DIGEST, digest)), None)
 
+    def host_architecture(self):
+        architecture = self.pod_json("info", "--format", "json")["host"]["arch"]
+        if not isinstance(architecture, str) or not re.fullmatch(r"[a-z0-9_]+", architecture):
+            raise ValueError("Cannot determine the Podman host architecture")
+        return architecture
+
+    def pull_native_image(self, reference):
+        """Select the daemon host's platform, then pin its official image digest."""
+        architecture = self.host_architecture()
+        self.pod("pull", "--platform", f"linux/{architecture}", reference)
+        image = self.pod_json("image", "inspect", reference)[0]
+        if image.get("Architecture") != architecture:
+            raise ValueError(f'Target image architecture {image.get("Architecture")} '
+                             f"does not match host {architecture}")
+        digest = self.image_digest(image)
+        if not digest:
+            raise ValueError("Missing target digest")
+        return digest
+
+    def restore_image(self, manifest):
+        """Use the exact image on the original platform, the same release elsewhere."""
+        architecture = self.host_architecture()
+        source = manifest.get("architecture")
+        reference = manifest["image"]
+        if source is None:
+            # Schema-1 backups made before architecture metadata was added.
+            self.pod("pull", reference)
+            source = self.pod_json("image", "inspect", reference)[0].get("Architecture")
+        if source != architecture:
+            reference = f'docker.gitea.com/gitea:{manifest["version"]}-rootless'
+            print(f"Restoring from {source} to {architecture}; selecting the same "
+                  f'Gitea release {manifest["version"]} for the destination host.')
+        digest = self.pull_native_image(reference)
+        output = self.pod("run", "--rm", "--network", "none", "--entrypoint",
+                          "gitea", digest, "--version")
+        match = re.search(r"version (\d+\.\d+\.\d+)", output)
+        if not match or match.group(1) != manifest["version"]:
+            raise ValueError("Restore image does not match the snapshot's Gitea version")
+        return digest
+
     def inspect_server(self):
         server = self.server()
         if not server["State"]["Running"]:
@@ -223,7 +266,8 @@ class Manager:
                ("/var/lib/gitea", "/etc/gitea", "/etc/localtime", "/etc/timezone")
                for mount in mounts):
             raise ValueError("Additional mounts need an explicit backup design")
-        image = self.image_digest(self.pod_json("image", "inspect", server["Image"])[0])
+        image_info = self.pod_json("image", "inspect", server["Image"])[0]
+        image = self.image_digest(image_info)
         if not image:
             raise ValueError("Cannot record the official image digest")
         output = self.pod("exec", server["Id"], "gitea", "--version")
@@ -253,7 +297,8 @@ class Manager:
                 if key in path_keys and value and not under(value) and not under(value, "/etc/gitea"):
                     raise ValueError(f"Uncovered or ambiguous storage path: [{section}] {key}; "
                                      "use an absolute volume path")
-        return {"s": server, "image": image, "version": version, "owner": owner}
+        return {"s": server, "image": image, "version": version, "owner": owner,
+                "architecture": image_info["Architecture"]}
 
     def stop(self, server):
         restart_file = self.state / "restart-container"
@@ -291,6 +336,8 @@ class Manager:
                     "image": info["image"], "version": info["version"], "owner": info["owner"],
                     "settings": dict(self.c, image=info["image"]),
                     "hashes": {filename: file_hash(directory / filename) for filename in SNAPSHOT_FILES}}
+        if "architecture" in info:
+            manifest["architecture"] = info["architecture"]
         validate_manifest(manifest)
         self.write(directory / "manifest.json", manifest)
         self.write(self.state / "pending.json", {"id": snapshot_id})
@@ -377,7 +424,7 @@ class Manager:
     def restore(self, snapshot_id, *, rollback=False):
         self.settings()
         manifest, directory = self.download(snapshot_id)
-        self.pod("pull", manifest["image"])
+        image = self.restore_image(manifest)
         servers = self.pod("ps", "-a", "--filter",
                            f'label=com.docker.compose.project={self.c["project"]}',
                            "--format", "{{.ID}}").strip()
@@ -400,7 +447,7 @@ class Manager:
             self.pod("run", "--rm", "--user", "0", "--entrypoint", "chown", "-v",
                      f"{volume}:/restore", self.helper(), "-R", manifest["owner"], "/restore")
         previous = dict(self.c)
-        self.c.update(image=manifest["image"], dataVolume=data, configVolume=config)
+        self.c.update(image=image, dataVolume=data, configVolume=config)
         shutil.copyfile(self.compose, self.state / "before-restore-compose.yaml")
         shutil.copyfile(directory / "compose.yaml", self.compose)
         self.write(self.state / "before-restore.json", previous)
@@ -440,15 +487,7 @@ class Manager:
         print(f'Official upgrade guidance: {UPGRADE_GUIDE}\nRelease notes: https://blog.gitea.com/\n'
               f'Upgrading {info["version"]} -> {version}')
         tag = f"docker.gitea.com/gitea:{version}-rootless"
-        self.pod("pull", tag)
-        image = self.pod_json("image", "inspect", tag)[0]
-        architecture = self.pod_json("info", "--format", "json")["host"]["arch"]
-        if image.get("Architecture") != architecture:
-            raise ValueError(f'Target image architecture {image.get("Architecture")} '
-                             f"does not match host {architecture}")
-        digest = self.image_digest(image)
-        if not digest:
-            raise ValueError("Missing target digest")
+        digest = self.pull_native_image(tag)
         self.space()
         self.stop(info["s"])
         try:
@@ -476,12 +515,11 @@ class Manager:
 
     def init(self):
         self.settings()
-        self.pod("pull", self.c["image"])
+        digest = self.pull_native_image(self.c["image"])
         for volume in (self.c["dataVolume"], self.c["configVolume"]):
             if volume in self.pod("volume", "ls", "--format", "{{.Name}}").splitlines():
                 raise ValueError(f"Volume {volume} exists; use adopt.sh for an existing instance")
-        image = self.pod_json("image", "inspect", self.c["image"])[0]
-        self.c["image"] = self.image_digest(image) or self.c["image"]
+        self.c["image"] = digest
         self.write(self.config, self.c)
         for volume in (self.c["dataVolume"], self.c["configVolume"]):
             self.pod("volume", "create", volume)

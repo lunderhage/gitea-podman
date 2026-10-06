@@ -7,6 +7,33 @@ its regular user, Bash and flock. Run all project commands as that user, without
 sudo. Management dependencies are installed inside the included Containerfile,
 not on the host. No Docker daemon or rootful Podman is used.
 
+## Architectures and testing on x86-64
+
+Use the same project and settings on x86-64 Linux (`amd64`) and 64-bit ARM Linux
+(`arm64`). The management image is built natively on each host. Gitea image pulls
+select the Podman host's platform, and initialization and upgrades check the
+selected image before changing the deployment. No QEMU or architecture-specific
+Compose file is needed. The selected Gitea release must publish a rootless image
+for your host's architecture.
+
+On your x86-64 machine, follow the new-installation steps below and run:
+
+```sh
+./scripts/test.sh
+```
+
+For an isolated test installation, use a distinct project name, fresh volume
+names, free ports, and a separate backup prefix such as
+`gitea-crypt:x86-test` in settings.json. This keeps test backup retention separate
+from your eventual production instance. Populate Gitea with a test repository,
+issue, and attachment; then test backup, restore, upgrade, and rollback. The unit
+suite simulates Podman/rclone and covers both amd64 and arm64 platform selection;
+real container testing requires the rootless Podman service on your test host.
+
+When the Pi becomes available, copy the project and independent rclone credentials,
+build the manager on the Pi, and restore your chosen snapshot. Do not copy the
+x86 manager image or an architecture-specific Gitea image to the Pi.
+
 ## New installation
 
 Copy this entire project to a writable directory on the host. Keep the directory
@@ -44,6 +71,9 @@ containers. The helper runs as your UID; short-lived tar/chown containers run as
 container UID 0 inside the regular user's rootless Podman namespace.
 
 ## Adopt an existing Compose installation
+
+For a backup of an existing aarch64 instance followed by bootstrap on x86-64 or
+another ARM host, follow [the source-to-replacement walkthrough](docs/bootstrap-existing-instance.md).
 
 Do not run init against existing volumes. Copy settings.example.json to
 settings.json and set the actual HTTP/SSH ports and desired crypt remote.
@@ -137,13 +167,22 @@ cause restore to refuse the operation.
 ./scripts/install-systemd.sh
 ```
 
-Restore verifies the manifest and archive checksums, pulls the recorded Gitea
-image digest, creates fresh volumes, restores container ownership, updates
+Restore verifies the manifest and archive checksums, selects the Gitea image,
+creates fresh volumes, restores container ownership, updates
 settings.json, and starts the recorded version. It preserves original volumes.
 A recovery.md copy of these instructions and compose.yaml are also in each
 snapshot. The archive manifest records the old settings; inspect it if recreating
 old port mappings or deployment preferences. Use the same rootless image layout.
-The recorded image must remain available in the registry or a local image cache.
+Snapshots record their source architecture. On the same architecture, restore
+uses the recorded image digest. When moving between x86-64 and ARM64, it selects
+the **same Gitea release** for the destination architecture, verifies its reported
+version before touching volumes, and records the destination image's digest.
+It does not combine migration to another architecture with a Gitea upgrade.
+The image digest may differ between architectures; the data and configuration
+are restored from the same snapshot. Older schema-1 snapshots without architecture
+metadata are handled by inspecting their original image after pulling it.
+The recorded image (or the same-version native image for a different architecture)
+must remain available in the registry or a local image cache.
 Keep an independent offline image export if registry-independent recovery matters.
 
 Before exposing a restored instance, verify login, users/issues/attachments,
