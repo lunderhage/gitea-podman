@@ -1,0 +1,6 @@
+settings.json
+private/
+state/
+*.log
+__pycache__/
+*.py[cod]
