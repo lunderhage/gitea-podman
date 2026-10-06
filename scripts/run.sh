@@ -9,6 +9,11 @@ mkdir -p "$ROOT/private" "$ROOT/state"
 chmod 700 "$ROOT/private" "$ROOT/state"
 exec 9>"$ROOT/state/operation.lock"
 flock -n 9 || { echo 'Another Gitea operation is running.' >&2; exit 1; }
+# Keep the lock in this shell only. Podman's background processes must not
+# inherit it and keep it held after this script has exited.
+podman() {
+  command podman "$@" 9>&-
+}
 CIDFILE="$ROOT/state/manager.cid"
 rm -f "$CIDFILE"
 cleanup() {
