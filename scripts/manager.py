@@ -200,7 +200,8 @@ class Manager:
             raise ValueError("Set a crypt remote with a dedicated prefix, e.g. gitea-crypt:server")
         configuration = json.loads(self.rclone("config", "dump"))
         crypt = configuration.get(remote.split(":", 1)[0], {})
-        if (crypt.get("type") != "crypt" or crypt.get("filename_encryption") != "standard"
+        # Rclone omits default-valued options from the saved configuration.
+        if (crypt.get("type") != "crypt" or crypt.get("filename_encryption", "standard") != "standard"
                 or str(crypt.get("directory_name_encryption", "true")).lower() == "false"):
             raise ValueError("Remote must use crypt with standard filename and directory encryption")
         self.rclone("lsf", remote, "--max-depth", "1")

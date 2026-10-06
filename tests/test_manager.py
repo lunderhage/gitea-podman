@@ -109,6 +109,27 @@ class ManagerTests(unittest.TestCase):
         self.assertFalse(any("copyto" in args for args in calls))
         self.assertTrue((manager.state / "pending.json").exists())
 
+    def test_crypt_defaults_are_accepted_and_insecure_options_rejected(self):
+        cases = (({"type": "crypt"}, True),
+                 ({"type": "crypt", "filename_encryption": "standard",
+                   "directory_name_encryption": "true"}, True),
+                 ({"type": "crypt", "filename_encryption": "off"}, False),
+                 ({"type": "crypt", "filename_encryption": "obfuscate"}, False),
+                 ({"type": "crypt", "directory_name_encryption": "false"}, False),
+                 ({"type": "crypt", "directory_name_encryption": False}, False),
+                 ({"type": "jottacloud"}, False))
+        for options, accepted in cases:
+            with self.subTest(options=options):
+                def command(program, arguments):
+                    return json.dumps({"crypt": options}) if "dump" in arguments else ""
+                manager = Manager(self.root, command)
+                manager.c = settings()
+                if accepted:
+                    self.assertEqual(manager.remote(), "crypt:test")
+                else:
+                    with self.assertRaisesRegex(ValueError, "Remote must use crypt"):
+                        manager.remote()
+
     def test_refuse_rootful_engine(self):
         manager = Manager(self.root, lambda *_: json.dumps({"host": {"security": {"rootless": False}}}))
         with self.assertRaisesRegex(ValueError, "rootless"):
