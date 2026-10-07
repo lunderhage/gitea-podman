@@ -5,6 +5,8 @@
   "project": "gitea-podman",
   "httpPort": 3000,
   "sshPort": 2222,
+  "sshDomain": "localhost",
+  "sshListenPort": 2222,
   "remote": "gitea-crypt:server",
   "keep": 14,
   "backupEnabled": true,

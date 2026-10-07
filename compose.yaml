@@ -8,10 +8,13 @@ services:
       - gitea-config:/etc/gitea
     ports:
       - "${HTTP_PORT:-3000}:3000"
-      - "${SSH_PORT:-2222}:2222"
+      - "${SSH_PORT:-2222}:${SSH_LISTEN_PORT:-2222}"
     environment:
       GITEA__indexer__REPO_INDEXER_ENABLED: "true"
       GITEA__indexer__REPO_INDEXER_TYPE: "bleve"
+      GITEA__server__SSH_DOMAIN: "${SSH_DOMAIN:-localhost}"
+      GITEA__server__SSH_PORT: "${SSH_PORT:-2222}"
+      GITEA__server__SSH_LISTEN_PORT: "${SSH_LISTEN_PORT:-2222}"
     networks:
       - gitea
 

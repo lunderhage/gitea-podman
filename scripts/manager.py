@@ -172,6 +172,12 @@ class Manager:
         for key in ("httpPort", "sshPort"):
             if type(self.c.get(key)) is not int or not 1024 <= self.c[key] <= 65535:
                 raise ValueError("Ports must be integers from 1024 to 65535")
+        domain = self.c.get("sshDomain", "localhost")
+        listen = self.c.get("sshListenPort", 2222)
+        if not isinstance(domain, str) or not re.fullmatch(r"[a-zA-Z0-9._:-]+", domain):
+            raise ValueError("sshDomain must be a hostname or IP address")
+        if type(listen) is not int or not 1024 <= listen <= 65535:
+            raise ValueError("sshListenPort must be an integer from 1024 to 65535")
         if not re.fullmatch(
             r"docker\.gitea\.com/gitea(?::\d+\.\d+\.\d+-rootless|@sha256:[a-f0-9]{64})",
             self.c.get("image", ""),
@@ -182,6 +188,8 @@ class Manager:
         return dict(os.environ, GITEA_IMAGE=self.c["image"],
                     DATA_VOLUME=self.c["dataVolume"], CONFIG_VOLUME=self.c["configVolume"],
                     HTTP_PORT=str(self.c["httpPort"]), SSH_PORT=str(self.c["sshPort"]),
+                    SSH_DOMAIN=self.c.get("sshDomain", "localhost"),
+                    SSH_LISTEN_PORT=str(self.c.get("sshListenPort", 2222)),
                     GITEA_PROJECT_DIR=str(self.root),
                     GITEA_PODMAN_SOCKET=os.environ.get("GITEA_PODMAN_SOCKET", ""),
                     GITEA_MANAGER_IMAGE=self.helper(),

@@ -36,6 +36,36 @@ x86 manager image or an architecture-specific Gitea image to the Pi.
 
 ## New installation
 
+To use podman-compose directly with the settings in this project:
+
+```sh
+source ./scripts/compose-env.sh
+podman-compose up -d
+podman-compose down
+```
+
+Source the file again after editing settings.json or after restore updates volume
+names. It exports COMPOSE_PROJECT_NAME and COMPOSE_FILE as well as image, volume,
+port, project directory and socket variables. It starts/stops no services. It
+uses an installed jq or reads settings with Python inside the existing management
+image. For a fresh install, init.sh still creates the external data/config volumes
+first; after initialization or restore, use up/down normally.
+
+SSH configuration is exported from settings.json as follows:
+
+| Setting | Compose environment | Meaning | Default |
+|---|---|---|---|
+| sshDomain | SSH_DOMAIN | Hostname advertised in SSH clone URLs | localhost |
+| sshPort | SSH_PORT | Published host port and advertised clone port | 2222 |
+| sshListenPort | SSH_LISTEN_PORT | Container SSH listener and mapping destination | 2222 |
+
+For the restored test on raspberrypi, set sshDomain to raspberrypi, keep sshPort
+at 2223, and sshListenPort at 2222. Source compose-env.sh and recreate the server
+with `podman-compose up -d --force-recreate server` to apply the settings. Direct
+environment overrides can also be exported after sourcing the script. Rebuild
+the management image after updating manager.py to use these settings through
+the management commands as well.
+
 Copy this entire project to a writable directory on the host. Keep the directory
 path free of spaces and %, &, or | if installing the included systemd units.
 
