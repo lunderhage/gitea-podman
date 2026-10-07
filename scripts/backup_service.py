@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 import zipfile
+import yaml
+from settings_io import settings_path
 
 from manager import Manager, file_hash, parse_ini, stop_capture_restart, validate_manifest
 
@@ -149,7 +151,9 @@ def backup_once(manager, lock_held=False):
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--once", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--once", action="store_true")
+    mode.add_argument("--idle", action="store_true", help="Keep the sidecar/network alive for manual backups only")
     parser.add_argument("--lock-held", action="store_true", help="Internal: caller already holds the project lock")
     args = parser.parse_args()
     for variable in ("HOME", "XDG_RUNTIME_DIR"):
@@ -161,10 +165,15 @@ def main():
         return
     if args.lock_held:
         raise ValueError("--lock-held is valid only with --once")
+    if args.idle:
+        print("Manual-only backup sidecar ready; server is untouched until a backup request", flush=True)
+        while True:
+            time.sleep(3600)
     print("Backup sidecar ready; monitoring configuration for scheduled backups", flush=True)
     retry_after = 0
     while True:
         try:
+            manager.config = settings_path(manager.root)
             manager.c = manager.read(manager.config)
             if manager.c.get("backupEnabled", True):
                 hour = manager.c.get("backupHourUTC", 3)
@@ -177,7 +186,7 @@ def main():
                 # completes installation/configuration. Never stop Gitea here.
                 if manager.rc.exists() and time.time() >= scheduled and last < scheduled and time.monotonic() >= retry_after:
                     backup_once(manager)
-        except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+        except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError, yaml.YAMLError) as error:
             print(f"Scheduled backup deferred or failed: {error}", file=sys.stderr, flush=True)
             retry_after = time.monotonic() + 3600
         time.sleep(60)
@@ -186,6 +195,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError, yaml.YAMLError) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

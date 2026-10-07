@@ -19,7 +19,7 @@ services:
       - gitea
 
   backup:
-    image: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
+    image: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
     restart: always
     depends_on:
       - server
@@ -35,7 +35,7 @@ services:
       HOME: /tmp/gitea-manager-home
       XDG_RUNTIME_DIR: /tmp/gitea-manager-runtime
       GITEA_ROOT: ${GITEA_PROJECT_DIR}
-      GITEA_MANAGER_IMAGE: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
+      GITEA_MANAGER_IMAGE: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
       GITEA_BACKUP_PATH: /backup
       GITEA_BACKUP_VOLUME: ${BACKUP_VOLUME:-gitea-podman-backups}
     networks:

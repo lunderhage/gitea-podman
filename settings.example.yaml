@@ -1,0 +1,13 @@
+image: docker.gitea.com/gitea:28.0.0-rootless
+project: gitea-podman
+dataVolume: gitea-data
+configVolume: gitea-config
+httpPort: 3000
+sshPort: 2222
+sshDomain: localhost
+sshListenPort: 2222
+remote: gitea-crypt:server
+keep: 14
+backupEnabled: true
+backupHourUTC: 3
+readySeconds: 900

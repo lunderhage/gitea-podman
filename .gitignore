@@ -1,4 +1,6 @@
 settings.json
+settings.yaml
+settings.yml
 private/
 state/
 *.log

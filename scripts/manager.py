@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Manage Gitea through a rootless Podman service and an encrypted rclone remote.
 
-Only Python's standard library is used. Shell wrappers provide the operation
+Python's standard library and PyYAML are used. Shell wrappers provide the operation
 lock and launch this program inside the management container. Settings and
 snapshot formats stay compatible with earlier versions of the project.
 """
@@ -20,6 +20,8 @@ import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+import yaml
+from settings_io import settings_path, load_settings, save_settings
 
 
 IMAGE_DIGEST = r"docker\.gitea\.com/gitea@sha256:[a-f0-9]{64}"
@@ -119,7 +121,7 @@ class Manager:
     def __init__(self, root, command=None):
         self.root = Path(root)
         self.command = command or run_command
-        self.config = self.root / "settings.json"
+        self.config = settings_path(self.root)
         self.state = self.root / "state"
         self.private = self.root / "private"
         self.compose = self.root / "compose.yaml"
@@ -130,11 +132,16 @@ class Manager:
 
     @staticmethod
     def read(filename):
+        if Path(filename).suffix in (".yaml", ".yml"):
+            return load_settings(filename)
         with Path(filename).open(encoding="utf-8") as stream:
             return json.load(stream)
 
     @staticmethod
     def write(filename, value):
+        if Path(filename).suffix in (".yaml", ".yml"):
+            save_settings(filename, value)
+            return
         filename = Path(filename)
         temporary = filename.with_name(filename.name + ".tmp")
         with temporary.open("w", encoding="utf-8") as stream:
@@ -338,7 +345,7 @@ class Manager:
 
     @staticmethod
     def helper():
-        return os.environ.get("GITEA_MANAGER_IMAGE", "localhost/gitea-podman-manager:3")
+        return os.environ.get("GITEA_MANAGER_IMAGE", "localhost/gitea-podman-manager:4")
 
     def capture(self, info, kind):
         snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(4)
@@ -637,6 +644,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Interrupted. Check Gitea status and pending backup state.", file=sys.stderr)
         sys.exit(130)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError, yaml.YAMLError) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

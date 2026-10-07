@@ -36,7 +36,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:3}
+IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
 if ! podman image exists "$IMAGE"; then
   podman build -t "$IMAGE" -f "$ROOT/Containerfile" "$ROOT"
 fi

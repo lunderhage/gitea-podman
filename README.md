@@ -1,5 +1,23 @@
 # Gitea with rootless Podman
 
+Settings are now YAML. Convert an existing deployment without losing its image,
+volume names or ports:
+
+```sh
+podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
+export GITEA_MANAGER_IMAGE=localhost/gitea-podman-manager:4
+./scripts/migrate-settings.sh
+source ./scripts/compose-env.sh
+podman-compose up -d
+```
+
+Migration creates settings.yaml and preserves settings.json. YAML takes precedence;
+do not maintain both as independent configurations. Existing JSON-only deployments
+remain readable and writable until converted. Restore and upgrades update whichever
+settings format is active; snapshot manifests and runtime metadata remain JSON.
+Settings use PyYAML safe loading and reject duplicate keys. PyYAML is installed
+in the management image, not on the host.
+
 Rootless Podman Compose, SQLite, a network-preserving backup sidecar, encrypted rclone dumps,
 and deliberate upgrades following the official Gitea upgrade procedure.
 The host needs a systemd Linux installation, rootless Podman configured for
@@ -24,7 +42,7 @@ On your x86-64 machine, follow the new-installation steps below and run:
 
 For an isolated test installation, use a distinct project name, fresh volume
 names, free ports, and a separate backup prefix such as
-`gitea-crypt:x86-test` in settings.json. This keeps test backup retention separate
+`gitea-crypt:x86-test` in settings.yaml. This keeps test backup retention separate
 from your eventual production instance. Populate Gitea with a test repository,
 issue, and attachment; then test backup, restore, upgrade, and rollback. The unit
 suite simulates Podman/rclone and covers both amd64 and arm64 platform selection;
@@ -44,14 +62,14 @@ podman-compose up -d
 podman-compose down
 ```
 
-Source the file again after editing settings.json or after restore updates volume
+Source the file again after editing settings.yaml or after restore updates volume
 names. It exports COMPOSE_PROJECT_NAME and COMPOSE_FILE as well as image, volume,
 port, project directory and socket variables. It starts/stops no services. It
-uses an installed jq or reads settings with Python inside the existing management
+uses installed Python/PyYAML or reads settings inside the existing management
 image. For a fresh install, init.sh still creates the external data/config volumes
 first; after initialization or restore, use up/down normally.
 
-SSH configuration is exported from settings.json as follows:
+SSH configuration is exported from settings.yaml as follows:
 
 | Setting | Compose environment | Meaning | Default |
 |---|---|---|---|
@@ -70,13 +88,13 @@ Copy this entire project to a writable directory on the host. Keep the directory
 path free of spaces and %, &, or | if installing the included systemd units.
 
 ```sh
-cp settings.example.json settings.json
-chmod 600 settings.json
+cp settings.example.yaml settings.yaml
+chmod 600 settings.yaml
 systemctl --user enable --now podman.socket
 ./scripts/init.sh
 ```
 
-Edit settings.json before init: select an explicit official rootless Gitea
+Edit settings.yaml before init: select an explicit official rootless Gitea
 release supported on your host architecture, unused named-volume names, free ports, and a dedicated
 rclone crypt prefix. The example version is a starting point, not an automatic
 latest-release selection. Init pulls the image, records its digest, creates fresh
@@ -85,13 +103,13 @@ complete installation using SQLite, with its database path under /var/lib/gitea.
 Use the same path when configuring repository and file storage. Preserve ports
 3000 and 2222 unless you deliberately change them.
 
-The manager is written in Python using only its standard library. Python runs
+The manager is written in Python using its standard library and PyYAML. Python runs
 inside the management container and is not required on the Gitea host. The
 manager image is built on first use. After changing its code or Containerfile,
 rebuild it explicitly:
 
 ```sh
-podman build -t localhost/gitea-podman-manager:3 -f Containerfile .
+podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
 ```
 
 The manager uses the rootless Podman socket to manage containers. It mounts the
@@ -102,11 +120,14 @@ container UID 0 inside the regular user's rootless Podman namespace.
 
 ## Adopt an existing Compose installation
 
+To back up the original production instance on primary2 without replacing its
+deployment, use [the manual-only backup attachment](docs/backup-original-primary2.md).
+
 For a backup of an existing aarch64 instance followed by bootstrap on x86-64 or
 another ARM host, follow [the source-to-replacement walkthrough](docs/bootstrap-existing-instance.md).
 
-Do not run init against existing volumes. Copy settings.example.json to
-settings.json and set the actual HTTP/SSH ports and desired crypt remote.
+Do not run init against existing volumes. Copy settings.example.yaml to
+settings.yaml and set the actual HTTP/SSH ports and desired crypt remote.
 
 ```sh
 podman ps
@@ -138,7 +159,7 @@ Configure rclone using the manager container:
 
 Create a normal remote for your cloud service, then a `crypt` remote wrapping a
 folder in it. Choose **standard filename encryption**, enable directory-name
-encryption, and use strong independent crypt passwords. Set settings.json's
+encryption, and use strong independent crypt passwords. Set settings.yaml's
 remote to a dedicated prefix such as `gitea-crypt:server`. Writable rclone backends
 with list, upload, download, and delete operations are supported; authentication
 and backend limits remain provider-specific. Browser authorization can be done
@@ -165,7 +186,7 @@ The main Compose file now includes the backup sidecar. See
 
 The Compose backup service runs daily at 03:00 UTC and catches up after downtime.
 Set backupEnabled to false to disable scheduling, or backupHourUTC to another
-hour (0–23) in settings.json. Manual backup.sh still works with scheduling disabled.
+hour (0–23) in settings.yaml. Manual backup.sh still works with scheduling disabled.
 The systemd installer disables the old backup timer; the sidecar is the scheduler. Enable user
 lingering (`loginctl enable-linger`) so services run at boot without a login;
 this may require an administrator depending on your system's policy.
@@ -199,7 +220,7 @@ service is configured. Check those logs regularly.
 
 ## Restore on a new machine
 
-Copy the project, create settings.json, configure the same crypt remote and
+Copy the project, create settings.yaml, configure the same crypt remote and
 passwords, and enable the new user's Podman socket. Choose an unused Compose
 project name and free HTTP/SSH ports. Existing containers under that project
 cause restore to refuse the operation.
@@ -213,7 +234,7 @@ cause restore to refuse the operation.
 
 Restore verifies the manifest and archive checksums, selects the Gitea image,
 creates fresh volumes, restores container ownership, updates
-settings.json, and starts the recorded version. It preserves original volumes.
+settings.yaml, and starts the recorded version. It preserves original volumes.
 A recovery.md copy of these instructions and compose.yaml are also in each
 snapshot. The archive manifest records the old settings; inspect it if recreating
 old port mappings or deployment preferences. Use the same rootless image layout.
@@ -235,7 +256,7 @@ restore, prevent outbound integrations, jobs, and webhooks from contacting real
 services. If the hostname or ports change, update ROOT_URL, SSH_DOMAIN, and
 SSH_PORT in /etc/gitea/app.ini using a container that mounts the config volume.
 If installation paths change, regenerate repository hooks using the documented
-`gitea admin regenerate hooks` command. Ports in settings.json describe host
+`gitea admin regenerate hooks` command. Ports in settings.yaml describe host
 publication; advertised URLs and SSH settings remain Gitea configuration.
 
 ## Upgrade according to official Gitea documentation
@@ -317,7 +338,7 @@ The test script uses an already installed Python 3.12+ when available, otherwise
 it builds and runs the project's management container with rootless Podman. It
 does not install Python or test dependencies on the host. Tests use unittest
 and simulated Podman/rclone commands, including a real archive round trip.
-The management image is now tagged :3 and includes the backup sidecar and ZIP
+The management image is now tagged :4 and includes YAML settings, the backup sidecar and ZIP
 restore helper. Settings remain compatible. New backups use snapshot schema 2
 (Gitea ZIP plus full config archive); schema 1 volume backups remain readable.
 Restore keeps the destination Compose topology, including the backup service;

@@ -14,11 +14,11 @@ instance untouched: its one-time export/migration remains a separate task.
 Build the new management image and run the unit tests before starting services:
 
 ```sh
-podman build -t localhost/gitea-podman-manager:3 -f Containerfile .
+podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
 ./scripts/test.sh
 ```
 
-For a new installation, create settings.json from settings.example.json, adjust
+For a new installation, create settings.yaml from settings.example.yaml, adjust
 the test names/ports/remote, and initialize normally:
 
 ```sh
@@ -40,7 +40,7 @@ The wrapper supplies Compose with GITEA_IMAGE, DATA_VOLUME, CONFIG_VOLUME,
 GITEA_PROJECT_DIR, GITEA_PODMAN_SOCKET, GITEA_MANAGER_IMAGE and BACKUP_VOLUME from
 settings and the invoking user's socket. If invoking podman-compose directly,
 export these variables yourself. The backup volume name defaults to
-`<project>-backups`; optional backupVolume in settings.json overrides it.
+`<project>-backups`; optional backupVolume in settings.yaml overrides it.
 
 The backup container owns scheduling: backupEnabled defaults to true and
 backupHourUTC defaults to 3 (daily at 03:00 UTC). It reads changed settings without

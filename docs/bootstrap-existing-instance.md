@@ -19,13 +19,13 @@ the existing Podman containers. Leave the original deployment and volumes intact
 
 ```sh
 cd /path/to/gitea-podman
-cp settings.example.json settings.json
-chmod 600 settings.json
+cp settings.example.yaml settings.yaml
+chmod 600 settings.yaml
 systemctl --user enable --now podman.socket
 podman ps --format '{{.ID}} {{.Names}} {{.Image}}'
 ```
 
-Edit settings.json: retain host ports 3000 and 2222 if using the original Compose
+Edit settings.yaml: retain host ports 3000 and 2222 if using the original Compose
 file and choose a dedicated backup prefix such as
 `gitea-crypt:original-aarch64`. The example image and volume names will be replaced
 by adoption; adoption does not upgrade the instance.
@@ -46,7 +46,7 @@ create it with the already built management image, using your configured prefix:
 ```sh
 podman run --rm \
   -v "$PWD/private:/config:ro" \
-  --entrypoint rclone localhost/gitea-podman-manager:3 \
+  --entrypoint rclone localhost/gitea-podman-manager:4 \
   --config /config/rclone.conf mkdir gitea-crypt:original-aarch64
 ```
 
@@ -75,14 +75,14 @@ initial backup. Check that the original Gitea is healthy after capture.
 ## 3. Bootstrap the replacement host
 
 Use x86-64 Linux now, or the aarch64 VM/64-bit Pi later. Copy the project, create
-fresh settings.json, and securely supply the same rclone configuration and crypt
+fresh settings.yaml, and securely supply the same rclone configuration and crypt
 keys. Do not copy the source's state directory or its architecture-specific
 container images. Reconfigure cloud authentication if tokens need renewal.
 
 ```sh
 cd /path/to/gitea-podman
-cp settings.example.json settings.json
-chmod 600 settings.json
+cp settings.example.yaml settings.yaml
+chmod 600 settings.yaml
 systemctl --user enable --now podman.socket
 ./scripts/configure-rclone.sh
 ```
@@ -101,7 +101,7 @@ before restore.
 Restore verifies the snapshot, selects the original Gitea release for the
 replacement architecture, checks its version, and creates/imports fresh volumes.
 On the same architecture it preserves the original digest; across architectures
-it resolves and pins the same-version native image. The current settings.json
+it resolves and pins the same-version native image. The current settings.yaml
 is updated to point to the restored image and volumes.
 
 The restored app.ini initially retains the source hostname, ROOT_URL, and
