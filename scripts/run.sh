@@ -37,6 +37,12 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
+if [[ -f "$ROOT/settings.yaml" || -f "$ROOT/settings.yml" ]] &&
+   [[ "$IMAGE" =~ ^localhost/gitea-podman-manager:[123]$ ]]; then
+  echo 'YAML settings require the updated management image. Run:' >&2
+  echo 'export GITEA_MANAGER_IMAGE=localhost/gitea-podman-manager:4' >&2
+  exit 1
+fi
 if ! podman image exists "$IMAGE"; then
   podman build -t "$IMAGE" -f "$ROOT/Containerfile" "$ROOT"
 fi

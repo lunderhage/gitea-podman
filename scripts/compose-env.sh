@@ -7,6 +7,12 @@ fi
 _gitea_compose_env() {
   local project_dir values
   project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || return 1
+  if [[ -f "$project_dir/settings.yaml" || -f "$project_dir/settings.yml" ]] &&
+     [[ "${GITEA_MANAGER_IMAGE:-}" =~ ^localhost/gitea-podman-manager:[123]$ ]]; then
+    echo 'An older GITEA_MANAGER_IMAGE is still exported. Run:' >&2
+    echo 'export GITEA_MANAGER_IMAGE=localhost/gitea-podman-manager:4' >&2
+    return 1
+  fi
   if command -v python3 >/dev/null && python3 -c 'import yaml' >/dev/null 2>&1; then
     values=$(python3 -B "$project_dir/scripts/settings_io.py" exports "$project_dir") || return 1
   else
