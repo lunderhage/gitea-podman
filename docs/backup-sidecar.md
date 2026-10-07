@@ -14,7 +14,7 @@ instance untouched: its one-time export/migration remains a separate task.
 Build the new management image and run the unit tests before starting services:
 
 ```sh
-podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
+podman build -t localhost/gitea-podman-manager:5 -f Containerfile .
 ./scripts/test.sh
 ```
 

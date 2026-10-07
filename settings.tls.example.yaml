@@ -1,0 +1,24 @@
+# Complete EXAMPLE for a new/disposable instance. For an existing instance,
+# preserve its actual image digest, project and restored volume names.
+image: docker.gitea.com/gitea:28.0.0-rootless
+project: gitea-podman
+dataVolume: gitea-data
+configVolume: gitea-config
+httpPort: 3000
+sshPort: 2222
+sshDomain: raspberrypi
+sshListenPort: 2222
+remote: gitea-crypt:raspberrypi
+keep: 14
+readySeconds: 900
+backupEnabled: true
+backupHourUTC: 3
+
+tlsEnabled: true
+publicHostname: git.example.net # Replace with the hostname YOU control.
+acmeEmail: admin@example.net   # Replace with your contact email.
+acmeAcceptTos: false           # Read the provider's terms; explicitly change to true.
+httpsPort: 8443
+httpRedirectPort: 8080
+# Default CA is Let's Encrypt production. For the disposable issuance test:
+# acmeUrl: https://acme-staging-v02.api.letsencrypt.org/directory

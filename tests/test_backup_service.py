@@ -117,6 +117,8 @@ class SidecarTests(unittest.TestCase):
             archive.writestr("data/lfs/object", "lfs content")
             archive.writestr("data/attachments/photo", "attachment")
             archive.writestr("data/ssh/gitea.rsa", "ssh identity fixture")
+            archive.writestr("data/https/git.example.net", "cached certificate and private key fixture")
+            archive.writestr("data/https/acme_account", "cached ACME account key fixture")
         destination = self.root / "restored"
         restore_dump(archive_path, self.config(), destination)
         with sqlite3.connect(destination / "data/gitea.db") as connection:
@@ -125,6 +127,8 @@ class SidecarTests(unittest.TestCase):
         self.assertEqual((destination / "git/lfs/object").read_text(), "lfs content")
         self.assertEqual((destination / "data/attachments/photo").read_text(), "attachment")
         self.assertEqual((destination / "ssh/gitea.rsa").read_text(), "ssh identity fixture")
+        self.assertEqual((destination / "https/git.example.net").read_text(), "cached certificate and private key fixture")
+        self.assertEqual((destination / "https/acme_account").read_text(), "cached ACME account key fixture")
 
     def test_sql_fallback_when_native_database_is_missing(self):
         archive_path = self.root / "dump.zip"

@@ -15,11 +15,19 @@ services:
       GITEA__server__SSH_DOMAIN: "${SSH_DOMAIN:-localhost}"
       GITEA__server__SSH_PORT: "${SSH_PORT:-2222}"
       GITEA__server__SSH_LISTEN_PORT: "${SSH_LISTEN_PORT:-2222}"
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DOMAIN: "${GITEA_DOMAIN:-localhost}"
+      GITEA__server__ROOT_URL: "${GITEA_ROOT_URL:-}"
+      GITEA__server__PROTOCOL: http
+      GITEA__server__ENABLE_ACME: "false"
+      GITEA__server__ACME_ACCEPTTOS: "false"
+      GITEA__server__REDIRECT_OTHER_PORT: "false"
+      GITEA__server__PORT_TO_REDIRECT: "8080"
     networks:
       - gitea
 
   backup:
-    image: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
+    image: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:5}
     restart: always
     depends_on:
       - server
@@ -35,7 +43,7 @@ services:
       HOME: /tmp/gitea-manager-home
       XDG_RUNTIME_DIR: /tmp/gitea-manager-runtime
       GITEA_ROOT: ${GITEA_PROJECT_DIR}
-      GITEA_MANAGER_IMAGE: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
+      GITEA_MANAGER_IMAGE: ${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:5}
       GITEA_BACKUP_PATH: /backup
       GITEA_BACKUP_VOLUME: ${BACKUP_VOLUME:-gitea-podman-backups}
     networks:

@@ -1,11 +1,16 @@
 # Gitea with rootless Podman
 
+Optional public HTTPS uses Gitea's built-in ACME support. TLS is disabled by
+default. See [the TLS configuration and rollout guide](docs/public-tls.md) and
+settings.tls.example.yaml. The guide includes rootless router port mappings,
+staging validation, certificate persistence and rollback to local HTTP.
+
 Settings are now YAML. Convert an existing deployment without losing its image,
 volume names or ports:
 
 ```sh
-podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
-export GITEA_MANAGER_IMAGE=localhost/gitea-podman-manager:4
+podman build -t localhost/gitea-podman-manager:5 -f Containerfile .
+export GITEA_MANAGER_IMAGE=localhost/gitea-podman-manager:5
 ./scripts/migrate-settings.sh
 source ./scripts/compose-env.sh
 podman-compose up -d
@@ -109,7 +114,7 @@ manager image is built on first use. After changing its code or Containerfile,
 rebuild it explicitly:
 
 ```sh
-podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
+podman build -t localhost/gitea-podman-manager:5 -f Containerfile .
 ```
 
 The manager uses the rootless Podman socket to manage containers. It mounts the
@@ -338,7 +343,7 @@ The test script uses an already installed Python 3.12+ when available, otherwise
 it builds and runs the project's management container with rootless Podman. It
 does not install Python or test dependencies on the host. Tests use unittest
 and simulated Podman/rclone commands, including a real archive round trip.
-The management image is now tagged :4 and includes YAML settings, the backup sidecar and ZIP
+The management image is now tagged :5 and includes optional TLS, YAML settings, the backup sidecar and ZIP
 restore helper. Settings remain compatible. New backups use snapshot schema 2
 (Gitea ZIP plus full config archive); schema 1 volume backups remain readable.
 Restore keeps the destination Compose topology, including the backup service;

@@ -1,0 +1,18 @@
+# Included automatically only when tlsEnabled is true in settings.
+# The base HTTPS mapping uses HTTP_PORT=httpsPort, still targeting container 3000.
+services:
+  server:
+    ports:
+      - "${HTTP_REDIRECT_PORT:-8080}:8080"
+    environment:
+      GITEA__server__PROTOCOL: https
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DOMAIN: "${PUBLIC_HOSTNAME:?Set publicHostname}"
+      GITEA__server__ROOT_URL: "${GITEA_ROOT_URL:?Set the canonical HTTPS URL}"
+      GITEA__server__ENABLE_ACME: "true"
+      GITEA__server__ACME_ACCEPTTOS: "true"
+      GITEA__server__ACME_EMAIL: "${ACME_EMAIL:?Set acmeEmail}"
+      GITEA__server__ACME_URL: "${ACME_URL:-https://acme-v02.api.letsencrypt.org/directory}"
+      GITEA__server__ACME_DIRECTORY: "${ACME_DIRECTORY:-/var/lib/gitea/https}"
+      GITEA__server__REDIRECT_OTHER_PORT: "true"
+      GITEA__server__PORT_TO_REDIRECT: "8080"

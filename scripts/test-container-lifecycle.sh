@@ -7,7 +7,7 @@ PROJECT=gitea-lifecycle-test
 CONTROLLER=gitea-lifecycle-test-controller
 TARGET=gitea-lifecycle-test-target
 COMPOSE_FILE="$ROOT/tests/lifecycle/compose.yaml"
-export LIFECYCLE_MANAGER_IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
+export LIFECYCLE_MANAGER_IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:5}
 export LIFECYCLE_SOCKET=${GITEA_PODMAN_SOCKET:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock}
 case "$ACTION" in
   run|cleanup) ;;

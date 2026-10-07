@@ -9,6 +9,7 @@ snapshot formats stay compatible with earlier versions of the project.
 import argparse
 from datetime import datetime, timezone
 import hashlib
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -21,7 +22,8 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 import yaml
-from settings_io import settings_path, load_settings, save_settings
+from settings_io import settings_path, load_settings, save_settings, compose_environment, compose_files
+from tls_config import web_settings, readiness_version
 
 
 IMAGE_DIGEST = r"docker\.gitea\.com/gitea@sha256:[a-f0-9]{64}"
@@ -190,17 +192,12 @@ class Manager:
             self.c.get("image", ""),
         ):
             raise ValueError("Use a pinned official rootless image")
+        web_settings(self.c)
 
     def env(self):
-        return dict(os.environ, GITEA_IMAGE=self.c["image"],
-                    DATA_VOLUME=self.c["dataVolume"], CONFIG_VOLUME=self.c["configVolume"],
-                    HTTP_PORT=str(self.c["httpPort"]), SSH_PORT=str(self.c["sshPort"]),
-                    SSH_DOMAIN=self.c.get("sshDomain", "localhost"),
-                    SSH_LISTEN_PORT=str(self.c.get("sshListenPort", 2222)),
-                    GITEA_PROJECT_DIR=str(self.root),
+        return dict(os.environ, **compose_environment(self.c, self.root),
                     GITEA_PODMAN_SOCKET=os.environ.get("GITEA_PODMAN_SOCKET", ""),
-                    GITEA_MANAGER_IMAGE=self.helper(),
-                    BACKUP_VOLUME=self.c.get("backupVolume", self.c["project"] + "-backups"))
+                    GITEA_MANAGER_IMAGE=self.helper())
 
     def backup_container(self):
         ids = self.pod("ps", "--filter", f'label=com.docker.compose.project={self.c["project"]}',
@@ -210,8 +207,11 @@ class Manager:
         return ids[0] if ids else None
 
     def compose_run(self, *arguments):
-        return self.command("podman-compose", ["-p", self.c["project"], "-f",
-                            str(self.compose), *arguments], env=self.env())
+        files = compose_files(self.c, self.root)
+        if len(files) > 1 and not Path(files[1]).is_file():
+            raise ValueError("TLS Compose override is missing; update the project code")
+        file_arguments = [argument for filename in files for argument in ("-f", filename)]
+        return self.command("podman-compose", ["-p", self.c["project"], *file_arguments, *arguments], env=self.env())
 
     def server(self):
         ids = self.pod("ps", "-a", "--filter",
@@ -345,7 +345,7 @@ class Manager:
 
     @staticmethod
     def helper():
-        return os.environ.get("GITEA_MANAGER_IMAGE", "localhost/gitea-podman-manager:4")
+        return os.environ.get("GITEA_MANAGER_IMAGE", "localhost/gitea-podman-manager:5")
 
     def capture(self, info, kind):
         snapshot_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(4)
@@ -501,13 +501,20 @@ class Manager:
 
     def ready(self, version):
         deadline = time.monotonic() + self.c["readySeconds"]
+        last_error = None
         while time.monotonic() < deadline:
             try:
-                with urlopen(f'http://127.0.0.1:{self.c["httpPort"]}/api/v1/version', timeout=10) as response:
-                    if json.load(response).get("version") == version:
-                        return True
-            except (OSError, HTTPError, URLError, ValueError):
-                pass
+                if readiness_version(self.c) == version:
+                    return True
+                error = "Reported Gitea version does not match the expected version"
+            except (OSError, HTTPError, URLError, HTTPException, ValueError) as failure:
+                error = str(failure)
+            if error != last_error:
+                scheme = "HTTPS (certificate and hostname verified)" if self.c.get("tlsEnabled", False) else "HTTP"
+                print(f"{scheme} readiness pending: {error}", file=sys.stderr)
+                if self.c.get("tlsEnabled", False):
+                    print("Check Gitea logs, public hostname DNS and public TCP 80/443 forwarding for ACME errors.", file=sys.stderr)
+                last_error = error
             time.sleep(3)
         return False
 

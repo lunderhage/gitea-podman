@@ -5,7 +5,7 @@ if command -v python3 >/dev/null && python3 -c 'import yaml' >/dev/null 2>&1; th
   exec python3 -B "$ROOT/scripts/settings_io.py" migrate "$ROOT"
 fi
 [[ $(id -u) != 0 ]] || { echo 'Run without sudo.' >&2; exit 1; }
-IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:4}
+IMAGE=${GITEA_MANAGER_IMAGE:-localhost/gitea-podman-manager:5}
 if ! podman image exists "$IMAGE"; then
   podman build -t "$IMAGE" -f "$ROOT/Containerfile" "$ROOT"
 fi

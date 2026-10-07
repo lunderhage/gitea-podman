@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 import sys
 import yaml
+from tls_config import web_environment, web_settings
 
 
 class SettingsLoader(yaml.SafeLoader):
@@ -74,14 +75,37 @@ def compose_values(values):
         raise ValueError("Invalid SSH domain")
     if type(listen) is not int or not 1024 <= listen <= 65535:
         raise ValueError("Invalid SSH listen port")
+    web_settings(values)
     return (values["image"], values["dataVolume"], values["configVolume"], values["project"],
             values["httpPort"], values["sshPort"], backup, domain, listen)
+
+
+def compose_files(values, root):
+    files = [str(Path(root) / "compose.yaml")]
+    if web_settings(values)["enabled"]:
+        files.append(str(Path(root) / "compose.tls.yaml"))
+    return files
+
+
+def compose_environment(values, root):
+    keys = ("GITEA_IMAGE", "DATA_VOLUME", "CONFIG_VOLUME", "COMPOSE_PROJECT_NAME", "HTTP_PORT",
+            "SSH_PORT", "BACKUP_VOLUME", "SSH_DOMAIN", "SSH_LISTEN_PORT")
+    result = {key: str(value) for key, value in zip(keys, compose_values(values))}
+    result.update(web_environment(values))
+    result["COMPOSE_FILE"] = ":".join(compose_files(values, root))
+    result["GITEA_PROJECT_DIR"] = str(root)
+    return result
 
 
 if __name__ == "__main__":
     try:
         if sys.argv[1] == "exports":
-            for value in compose_values(load_settings(settings_path(sys.argv[2]))):
+            read_root = sys.argv[2]
+            output_root = sys.argv[3] if len(sys.argv) > 3 else read_root
+            for key, value in compose_environment(load_settings(settings_path(read_root)), output_root).items():
+                if "\n" in value or "\r" in value or "\0" in value:
+                    raise ValueError("Compose values must not contain control characters")
+                print(key)
                 print(value)
         elif sys.argv[1] == "migrate":
             root = Path(sys.argv[2])

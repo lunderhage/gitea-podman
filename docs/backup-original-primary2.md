@@ -12,7 +12,7 @@ such as gitea-crypt:original-aarch64. Use the example's pinned image as an initi
 placeholder; adoption replaces it with the actual running image digest.
 
 ```sh
-podman build -t localhost/gitea-podman-manager:4 -f Containerfile .
+podman build -t localhost/gitea-podman-manager:5 -f Containerfile .
 systemctl --user enable --now podman.socket
 ./scripts/adopt.sh gitea_server_1
 ./scripts/configure-rclone.sh
@@ -26,7 +26,7 @@ Create the chosen destination using the management image's rclone command.
 
 ```sh
 podman run --rm -it -v "$PWD/private:/config" \
-  --entrypoint rclone localhost/gitea-podman-manager:4 \
+  --entrypoint rclone localhost/gitea-podman-manager:5 \
   --config /config/rclone.conf mkdir gitea-crypt:original-aarch64
 ./scripts/attach-existing-backup.sh gitea_server_1
 ```

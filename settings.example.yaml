@@ -11,3 +11,11 @@ keep: 14
 backupEnabled: true
 backupHourUTC: 3
 readySeconds: 900
+
+# Public HTTPS is opt-in; fill deployment values before enabling.
+tlsEnabled: false
+publicHostname: ""
+acmeEmail: ""
+acmeAcceptTos: false
+httpsPort: 8443
+httpRedirectPort: 8080

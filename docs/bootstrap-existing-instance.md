@@ -46,7 +46,7 @@ create it with the already built management image, using your configured prefix:
 ```sh
 podman run --rm \
   -v "$PWD/private:/config:ro" \
-  --entrypoint rclone localhost/gitea-podman-manager:4 \
+  --entrypoint rclone localhost/gitea-podman-manager:5 \
   --config /config/rclone.conf mkdir gitea-crypt:original-aarch64
 ```
 
